@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+
+echo "Setting up Bengali fonts from local repository..."
+mkdir -p ~/.fonts
+cp /tmp/fonts/*.ttf ~/.fonts/
+
+# Refresh font cache
+echo "Refreshing font cache..."
+fc-cache -fv
+
+# Clean up
+rm -rf /tmp/fonts
+
+echo "Bengali font setup complete!"
