@@ -25,4 +25,5 @@ RUN pip3 install -U --no-cache-dir \
 
 COPY fonts/ /tmp/fonts/
 COPY postInstall /
+RUN chmod +x /postInstall
 RUN /postInstall
