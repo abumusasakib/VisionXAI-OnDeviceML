@@ -4,24 +4,18 @@ import 'dart:isolate';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img_lib;
 import 'package:tflite_flutter/tflite_flutter.dart';
+import 'tflite_caption_service.dart';
 
-class CaptionResult {
-  final String caption;
-  final List<String> words;
-  final List<List<double>> attentionMaps;
-
-  CaptionResult(this.caption, this.words, this.attentionMaps);
-}
-
-class TfliteCaptionService {
+class TfliteCaptionServiceImpl implements TfliteCaptionService {
   Uint8List? _featureExtractorBytes;
   Uint8List? _decoderBytes;
   Map<int, String>? _indexToWord;
   bool _isInitialized = false;
 
+  @override
   bool get isInitialized => _isInitialized;
 
-  /// Initializes vocabulary and loads model bytes into memory from the asset bundle on the main isolate
+  @override
   Future<void> init() async {
     if (_isInitialized) return;
 
@@ -44,7 +38,7 @@ class TfliteCaptionService {
     _isInitialized = true;
   }
 
-  /// Generates caption for a given image file path in a separate isolate using pre-loaded buffers
+  @override
   Future<CaptionResult> generateCaption(String imagePath) async {
     if (!_isInitialized) {
       await init();
@@ -218,5 +212,6 @@ class TfliteCaptionService {
     });
   }
 
+  @override
   void dispose() {}
 }
