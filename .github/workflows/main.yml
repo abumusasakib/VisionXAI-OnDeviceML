@@ -1,0 +1,149 @@
+name: VisionXAI CI/CD
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: write
+
+jobs:
+  # Job 1: Build the training container capsule environment
+  build-capsule:
+    name: Build Training Capsule Env
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: capsule-5653931
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Capsule Docker Image
+        run: |
+          cd environment
+          docker build . --tag capsule-env
+
+  # Job 2: Build and deploy the Flutter Web application
+  build-web:
+    name: Build & Deploy Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vision_xai
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: vision_xai/.fvmrc
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localization
+        run: flutter gen-l10n
+
+      - name: Run build_runner
+        run: flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Build Web
+        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
+
+      - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: vision_xai/build/web
+          branch: gh-pages
+
+  # Job 3: Build Flutter Android App & Create GitHub Release
+  build-android:
+    name: Build Android & Release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vision_xai
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: vision_xai/.fvmrc
+          channel: 'stable'
+          cache: true
+
+      - name: Extract Version Info
+        id: version_info
+        run: |
+          VERSION=$(node -e "console.log(require('./setup.js').extractVersion())")
+          PACKAGE=$(node -e "console.log(require('./setup.js').extractPackageName())")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "PACKAGE=$PACKAGE" >> $GITHUB_OUTPUT
+          echo "BUILD_NUMBER=${{ github.run_number }}" >> $GITHUB_OUTPUT
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localization
+        run: flutter gen-l10n
+
+      - name: Run build_runner
+        run: flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Build Android APK
+        run: |
+          flutter build apk --release \
+            --build-name=${{ steps.version_info.outputs.VERSION }} \
+            --build-number=${{ steps.version_info.outputs.BUILD_NUMBER }}
+
+      - name: Rename APK
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/${{ steps.version_info.outputs.PACKAGE }}-v${{ steps.version_info.outputs.VERSION }}+${{ steps.version_info.outputs.BUILD_NUMBER }}.apk
+
+      - name: Create Release
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version_info.outputs.VERSION }}+${{ steps.version_info.outputs.BUILD_NUMBER }}
+          name: Release v${{ steps.version_info.outputs.VERSION }}+${{ steps.version_info.outputs.BUILD_NUMBER }}
+          files: vision_xai/build/app/outputs/flutter-apk/*.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+  # Job 4: Build check for Docker environment of the Flutter app
+  docker-build:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vision_xai
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Build Metadata
+        id: build_info
+        run: |
+          PACKAGE=$(node -e "console.log(require('./setup.js').extractPackageName())")
+          FLUTTER=$(node -e "console.log(require('./setup.js').getFlutterVersion())")
+          echo "PACKAGE=$PACKAGE" >> $GITHUB_OUTPUT
+          echo "FLUTTER_VERSION=$FLUTTER" >> $GITHUB_OUTPUT
+
+      - name: Build the Docker image
+        run: |
+          docker build . --file Dockerfile \
+            --build-arg FLUTTER_VERSION=${{ steps.build_info.outputs.FLUTTER_VERSION }} \
+            --build-arg PACKAGE_NAME=${{ steps.build_info.outputs.PACKAGE }} \
+            --tag ${{ steps.build_info.outputs.PACKAGE }}:$(date +%s)

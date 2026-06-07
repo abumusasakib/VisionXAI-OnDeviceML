@@ -3,10 +3,6 @@ const fs = require("fs");
 const path = require("path");
 
 // Check if Node.js is installed
-// This function checks if Node.js is installed on the system by attempting to run the
-// command node -v (which prints the Node.js version) using execSync. If the command runs
-// successfully, it logs a success message and returns true. If the command fails
-// (i.e., Node.js is not installed), it logs an error message and returns false.
 function checkNodeInstalled() {
   try {
     execSync("node -v", { stdio: "ignore" });
@@ -18,11 +14,9 @@ function checkNodeInstalled() {
   }
 }
 
-// Install Node.js (for Windows, macOS, or Linux)
-// This function provides instructions for manual Node.js installation
+// Install Node.js
 function installNode() {
   console.log("Installing Node.js...");
-
   const platform = process.platform;
   const url =
     platform === "win32"
@@ -35,11 +29,6 @@ function installNode() {
 }
 
 // Check if Docker is installed
-// This JavaScript function checks if Docker is installed on the system by running
-// the command docker -v using execSync. If the command runs successfully, it logs
-// a success message. If it fails, it logs an error message and provides a download
-// link for Docker based on the system's platform (Windows, macOS, or Linux), then
-// exits the script.
 function checkDockerInstalled() {
   try {
     execSync("docker -v", { stdio: "ignore" });
@@ -65,10 +54,6 @@ function checkDockerInstalled() {
 }
 
 // Read Flutter version from `.fvmrc`
-// This JavaScript function reads the Flutter version from a file named .fvmrc
-// in the current directory, parses its content as JSON, and returns the value
-// of the flutter property. If the file cannot be read or parsed, it logs an
-// error and exits the process.
 function getFlutterVersion() {
   try {
     const fvmrcPath = path.join(__dirname, ".fvmrc");
@@ -82,9 +67,6 @@ function getFlutterVersion() {
 }
 
 // Extract package name from pubspec.yaml
-// This JavaScript function `extractPackageName` reads a `pubspec.yaml`
-// file, extracts the package name from it, and returns the name in lowercase.
-// If the file cannot be read or the package name is not found, it logs an error and exits the process.
 function extractPackageName() {
   try {
     const pubspecPath = path.join(__dirname, "pubspec.yaml");
@@ -92,7 +74,6 @@ function extractPackageName() {
 
     const nameMatch = pubspecContent.match(/name:\s*(.*)/);
     if (nameMatch && nameMatch[1]) {
-      // Convert to lowercase before returning
       return nameMatch[1].trim().toLowerCase();
     } else {
       console.error("Package name not found in pubspec.yaml");
@@ -105,10 +86,6 @@ function extractPackageName() {
 }
 
 // Replace placeholder in Dockerfile.template and create Dockerfile
-// This JavaScript function, generateDockerfile, creates a Dockerfile by replacing
-// placeholders in a template file (Dockerfile.template) with a provided flutterVersion
-// and the package name extracted from pubspec.yaml. It then writes the modified content
-// to a new file named Dockerfile.
 function generateDockerfile(flutterVersion) {
   try {
     const templatePath = path.join(__dirname, "Dockerfile.template");
@@ -134,13 +111,11 @@ function generateDockerfile(flutterVersion) {
 function createDockerCompose() {
   const dockerComposePath = path.join(__dirname, "docker-compose.yml");
 
-  // Check if the docker-compose.yml file already exists
   if (fs.existsSync(dockerComposePath)) {
     console.log("docker-compose.yml already exists. Skipping creation.");
     return;
   }
 
-  // Docker Compose content
   const dockerComposeContent = `
 version: '3.8'
 
@@ -153,15 +128,14 @@ services:
     volumes:
       - ./build:/app/build
     ports:
-      - "5000:5000"  # Expose the container's port 5000 to the host machine
+      - "5000:5000"
     command: /bin/bash -c "
       flutter build apk --release &&
       flutter build web --release &&
       cp /output/${extractPackageName()}-release.apk /app/build/ &&
       serve -s /app/build/web -l 5000"
-    # Automatically remove the container after copying the artifacts
     restart: "no"
-    stop_grace_period: 30s  # Graceful stop for 30 seconds
+    stop_grace_period: 30s
 `.trim();
 
   try {
@@ -174,13 +148,8 @@ services:
 }
 
 // Build the Docker image
-// This JavaScript function, buildDockerImage, builds a Docker image using the docker build command.
-// It takes a flutterVersion parameter and passes it, along with the package name extracted from
-// pubspec.yaml, as build arguments to Docker. If the build is successful, it logs a success message;
-// otherwise, it logs an error message and exits the process.
 function buildDockerImage(flutterVersion) {
   try {
-    // Pass flutterVersion and package name to Docker as a build argument
     execSync(
       `docker build --build-arg FLUTTER_VERSION=${flutterVersion} --build-arg PACKAGE_NAME=${extractPackageName()} -t ${extractPackageName()} .`,
       { stdio: "inherit" }
@@ -193,7 +162,6 @@ function buildDockerImage(flutterVersion) {
 }
 
 // Clean up generated Dockerfile
-// This function deletes a generated Dockerfile if it exists in the current directory.
 function cleanUp() {
   const dockerfilePath = path.join(__dirname, "Dockerfile");
   if (fs.existsSync(dockerfilePath)) {
@@ -202,30 +170,61 @@ function cleanUp() {
   }
 }
 
-// Main execution
-(async function main() {
-  if (!checkNodeInstalled()) {
-    installNode();
-  }
-
-  checkDockerInstalled();
-
-  // Get Flutter version from `.fvmrc`
-  const flutterVersion = getFlutterVersion();
-  console.log(`Flutter version found in .fvmrc: ${flutterVersion}`);
-
-  generateDockerfile(flutterVersion); // Create the Dockerfile with placeholder
-  // buildDockerImage(flutterVersion);    // Build Docker image with specific Flutter version
-  createDockerCompose(); // Create docker-compose.yml file
-
-  // Run 'docker-compose up --build' after creating the Dockerfile and docker-compose.yml
+// Extract app version from pubspec.yaml
+function extractVersion() {
   try {
-    execSync("docker-compose up --build", { stdio: "inherit" });
+    const pubspecPath = path.join(__dirname, "pubspec.yaml");
+    const pubspecContent = fs.readFileSync(pubspecPath, "utf-8");
+
+    const versionMatch = pubspecContent.match(/version:\s*(.*)/);
+    if (versionMatch && versionMatch[1]) {
+      return versionMatch[1].trim().split("+")[0];
+    } else {
+      console.error("Version not found in pubspec.yaml");
+      process.exit(1);
+    }
   } catch (error) {
-    console.error("Error running docker-compose up:", error.message);
-    console.error("Maybe you need to run docker compose up --build instead?");
+    console.error("Error reading version from pubspec.yaml:", error.message);
     process.exit(1);
   }
+}
 
-  cleanUp(); // Clean up after building
-})();
+// Export functions for use in GitHub Actions
+module.exports = {
+  checkNodeInstalled,
+  checkDockerInstalled,
+  getFlutterVersion,
+  extractPackageName,
+  extractVersion,
+  generateDockerfile,
+  createDockerCompose,
+  buildDockerImage,
+  cleanUp,
+};
+
+// Main execution (only if called directly)
+if (require.main === module) {
+  (async function main() {
+    if (!checkNodeInstalled()) {
+      installNode();
+    }
+
+    checkDockerInstalled();
+
+    const flutterVersion = getFlutterVersion();
+    console.log(`Flutter version found in .fvmrc: ${flutterVersion}`);
+
+    generateDockerfile(flutterVersion);
+    createDockerCompose();
+
+    try {
+      execSync("docker-compose up --build", { stdio: "inherit" });
+    } catch (error) {
+      console.error("Error running docker-compose up:", error.message);
+      console.error("Maybe you need to run docker compose up --build instead?");
+      process.exit(1);
+    }
+
+    cleanUp();
+  })();
+}
